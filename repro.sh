@@ -14,7 +14,13 @@ set -euo pipefail
 #   2. Runs all three builds in parallel via docker buildx bake
 #   3. Reports pass/fail
 
-ITERATIONS=${1:-5}
+ITERATIONS=5
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --iterations) ITERATIONS=$2; shift 2 ;;
+        *) shift ;;
+    esac
+done
 PASS=0
 FAIL=0
 
