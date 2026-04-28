@@ -4,12 +4,20 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 # Identical layer across all three Dockerfiles — BuildKit deduplicates this
 # into a single read-only snapshot shared by all parallel builds.
-RUN mkdir -p /app/.shared-dir && chmod 777 /app/.shared-dir
+RUN mkdir -p /app/.bazel && chmod 777 /app/.bazel
 
-# Simulate concurrent writes into the copy-up target directory.
-# Each build spawns 8 parallel subshells all writing into /app/.shared-dir
-# simultaneously, maximising the chance of hitting the overlayfs copy-up race.
-RUN for i in $(seq 1 8); do \
-        mkdir -p /app/.shared-dir/sub-$i && \
-        dd if=/dev/urandom of=/app/.shared-dir/sub-$i/data bs=1M count=16 & \
-    done; wait
+RUN microdnf install -y git tar gzip && microdnf clean all
+
+RUN curl -fsSL https://github.com/bazelbuild/bazelisk/releases/download/v1.21.0/bazelisk-linux-amd64 \
+        -o /usr/local/bin/bazelisk \
+    && echo "655a5c675dacf3b7ef4970688b6a54598aa30cbaa0b9e717cd1412c1ef9ec5a7  /usr/local/bin/bazelisk" | sha256sum -c - \
+    && chmod +x /usr/local/bin/bazelisk
+
+WORKDIR /build
+
+COPY . /build/
+
+# Bazel server startup performs a burst of nested mkdirs into /app/.bazel —
+# the same pattern that triggers the copy-up race in production.
+RUN echo 'startup --output_user_root=/app/.bazel' >> /build/.bazelrc \
+    && bazelisk build //:hello
